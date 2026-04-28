@@ -1,2 +1,4 @@
-anthropic>=0.40.0
+# Choose what you need — at least one provider package is required:
+openai>=1.0.0          # OpenAI API + Ollama (openai-compatible)
+# anthropic>=0.40.0   # Anthropic Claude (uncomment if needed)
 python-dotenv>=1.0.0

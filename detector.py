@@ -1,19 +1,32 @@
 #!/usr/bin/env python3
 """
-Phishing Email Detector — powered by Claude Haiku AI.
+Phishing Email Detector — multi-provider AI backend.
 
-Accepts email text via file, stdin, or batch directory and returns a
-structured analysis: verdict, confidence, red flags, and explanation.
+Supported providers:
+  openai   — OpenAI API (needs OPENAI_API_KEY)
+  ollama   — local Ollama instance (no key needed)
+  anthropic — Anthropic Claude (needs ANTHROPIC_API_KEY)
+
+Usage examples:
+  python detector.py --file email.txt --provider ollama --model llama3.2
+  python detector.py --batch ./emails/ --provider openai --model gpt-4o-mini
+  python detector.py --file email.txt --provider anthropic
 """
 
-import anthropic
 import argparse
+import io
 import json
 import os
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+# Force UTF-8 on Windows so box-drawing chars render correctly
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 try:
     from dotenv import load_dotenv
@@ -41,7 +54,7 @@ def disable_colors() -> None:
             setattr(C, attr, "")
 
 
-# ── Expert system prompt (cached across batch runs) ───────────────────────────
+# ── System prompt ─────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """\
 You are an expert cybersecurity analyst specialising in email threat detection
@@ -76,11 +89,11 @@ Evaluate these ten threat indicators:
     without verification.
 
 Confidence calibration:
-  90-100 → multiple clear indicators, very high certainty
-  70-89  → strong indicators present
-  50-69  → some indicators but ambiguous
-  30-49  → minimal indicators; probably legitimate but has concerns
-  0-29   → almost certainly legitimate with no notable red flags
+  90-100 -> multiple clear indicators, very high certainty
+  70-89  -> strong indicators present
+  50-69  -> some indicators but ambiguous
+  30-49  -> minimal indicators; probably legitimate but has concerns
+  0-29   -> almost certainly legitimate with no notable red flags
 
 Return ONLY valid JSON — no prose, no markdown fences, exactly this schema:
 {
@@ -106,42 +119,95 @@ class PhishingAnalysis:
     timestamp:   str       = field(default_factory=lambda: datetime.now().isoformat())
 
 
-# ── Core analysis ─────────────────────────────────────────────────────────────
+# ── Provider backends ─────────────────────────────────────────────────────────
 
-def analyze_email(
-    client: anthropic.Anthropic,
-    email_text: str,
-    source: str = "stdin",
-) -> PhishingAnalysis:
-    """Call Claude Haiku with the email text and parse the structured response."""
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=1024,
-        system=[
-            {
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                # Cache the large system prompt — saves tokens on every batch call.
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        messages=[
-            {
-                "role": "user",
-                "content": f"Analyse this email for phishing indicators:\n\n{email_text}",
-            }
-        ],
-    )
-
-    raw = response.content[0].text.strip()
-
-    # Strip markdown code fences if the model wraps output in them.
+def _parse_response(raw: str) -> PhishingAnalysis:
+    """Parse JSON from model response, stripping markdown fences if present."""
+    raw = raw.strip()
     if raw.startswith("```"):
         parts = raw.split("```")
         raw = parts[1].lstrip("json").strip() if len(parts) >= 2 else raw
-
     data = json.loads(raw)
+    return data
 
+
+def _call_openai_compat(base_url: str, api_key: str, model: str, email_text: str) -> str:
+    """Shared call for OpenAI and Ollama (both use openai-compatible API)."""
+    try:
+        from openai import OpenAI
+        from httpx import Timeout
+    except ImportError:
+        print(f"{C.RED}Error: 'openai' package not installed. Run: pip install openai{C.RESET}",
+              file=sys.stderr)
+        sys.exit(1)
+
+    client = OpenAI(
+        base_url=base_url,
+        api_key=api_key,
+        timeout=Timeout(connect=30, read=600, write=60, pool=30),
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content": f"Analyse this email for phishing indicators:\n\n{email_text}"},
+        ],
+        max_tokens=1024,
+        temperature=0,
+    )
+    return response.choices[0].message.content
+
+
+def _call_anthropic(api_key: str, model: str, email_text: str) -> str:
+    try:
+        import anthropic
+    except ImportError:
+        print(f"{C.RED}Error: 'anthropic' package not installed. Run: pip install anthropic{C.RESET}",
+              file=sys.stderr)
+        sys.exit(1)
+
+    client = anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model=model,
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=[
+            {"role": "user", "content": f"Analyse this email for phishing indicators:\n\n{email_text}"},
+        ],
+    )
+    return response.content[0].text
+
+
+def analyze_email(provider: str, model: str, email_text: str, source: str = "stdin") -> PhishingAnalysis:
+    if provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            print(f"{C.RED}Error: OPENAI_API_KEY is not set.{C.RESET}", file=sys.stderr)
+            sys.exit(1)
+        raw = _call_openai_compat("https://api.openai.com/v1", api_key, model, email_text)
+
+    elif provider == "ollama":
+        host = os.environ.get("OLLAMA_HOST", "localhost:11434")
+        if not host.startswith("http"):
+            host = "http://" + host
+        # 0.0.0.0 is a bind address, not a valid connect target — use localhost
+        host = host.replace("//0.0.0.0", "//localhost")
+        base_url = host.rstrip("/") + "/v1"
+        raw = _call_openai_compat(base_url, "ollama", model, email_text)
+
+    elif provider == "anthropic":
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            print(f"{C.RED}Error: ANTHROPIC_API_KEY is not set.{C.RESET}", file=sys.stderr)
+            sys.exit(1)
+        raw = _call_anthropic(api_key, model, email_text)
+
+    else:
+        print(f"{C.RED}Error: unknown provider '{provider}'. Choose: openai, ollama, anthropic{C.RESET}",
+              file=sys.stderr)
+        sys.exit(1)
+
+    data = _parse_response(raw)
     return PhishingAnalysis(
         verdict=data["verdict"],
         confidence=int(data["confidence"]),
@@ -169,17 +235,16 @@ def _wrap(text: str, width: int = 56, indent: str = "    ") -> str:
 
 
 def print_analysis(analysis: PhishingAnalysis, label: str) -> None:
-    """Render a colour-coded analysis block to stdout."""
     if analysis.verdict == "PHISHING":
-        vcol, icon = C.RED,    "PHISHING   🚨"
+        vcol, icon = C.RED,    "PHISHING   [!!!]"
     elif analysis.verdict == "SUSPICIOUS":
-        vcol, icon = C.YELLOW, "SUSPICIOUS ⚠️ "
+        vcol, icon = C.YELLOW, "SUSPICIOUS [?]  "
     else:
-        vcol, icon = C.GREEN,  "LEGITIMATE ✅"
+        vcol, icon = C.GREEN,  "LEGITIMATE [OK] "
 
     bar_len = 28
     filled  = int(bar_len * analysis.confidence / 100)
-    bar     = "█" * filled + "░" * (bar_len - filled)
+    bar     = "#" * filled + "." * (bar_len - filled)
     bcol    = C.RED if analysis.confidence >= 70 else (C.YELLOW if analysis.confidence >= 40 else C.GREEN)
 
     div = f"{C.BOLD}{C.CYAN}{'─'*60}{C.RESET}"
@@ -194,7 +259,7 @@ def print_analysis(analysis: PhishingAnalysis, label: str) -> None:
     print(f"\n{C.BOLD}  RED FLAGS{C.RESET}")
     if analysis.red_flags:
         for flag in analysis.red_flags:
-            print(f"    {C.RED}▸{C.RESET} {flag}")
+            print(f"    {C.RED}>{C.RESET} {flag}")
     else:
         print(f"    {C.GREEN}None detected{C.RESET}")
 
@@ -223,7 +288,7 @@ def read_file(path: Path) -> str:
 
 
 def read_stdin() -> str:
-    print(f"{C.DIM}Reading from stdin — paste email, then press Ctrl+D (Unix) or Ctrl+Z (Windows)…{C.RESET}",
+    print(f"{C.DIM}Reading from stdin — paste email, then press Ctrl+D (Unix) or Ctrl+Z (Windows)...{C.RESET}",
           file=sys.stderr)
     return sys.stdin.read()
 
@@ -232,41 +297,58 @@ def save_report(results: list[PhishingAnalysis], out: Path) -> None:
     counts = {v: sum(1 for r in results if r.verdict == v)
               for v in ("PHISHING", "SUSPICIOUS", "LEGITIMATE")}
     report = {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at":   datetime.now().isoformat(),
         "total_analysed": len(results),
-        "summary": counts,
-        "results": [asdict(r) for r in results],
+        "summary":        counts,
+        "results":        [asdict(r) for r in results],
     }
     out.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"{C.CYAN}Report saved → {out}{C.RESET}")
+    print(f"{C.CYAN}Report saved -> {out}{C.RESET}")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+DEFAULT_MODELS = {
+    "openai":    "gpt-4o-mini",
+    "ollama":    "llama3.2",
+    "anthropic": "claude-haiku-4-5-20251001",
+}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="detector",
-        description="Phishing Email Detector — powered by Claude AI",
+        description="Phishing Email Detector — multi-provider AI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+providers & required env vars:
+  openai    OPENAI_API_KEY
+  ollama    (none — runs locally, default http://localhost:11434)
+  anthropic ANTHROPIC_API_KEY
+
 examples:
-  detector --file suspicious.txt
-  detector --stdin < email.txt
-  cat email.txt | detector --stdin
-  detector --batch ./emails/ --output report.json
-  detector --batch ./emails/ --no-color | tee scan.log
+  python detector.py --file suspicious.txt --provider ollama --model llama3.2
+  python detector.py --batch ./emails/ --provider openai
+  python detector.py --file email.txt --provider anthropic
+  cat email.txt | python detector.py --stdin --provider ollama --model gemma3
         """,
     )
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument("--file",  "-f", type=Path, metavar="FILE",
-                     help="path to a single email .txt file")
+                     help="single email .txt file")
     src.add_argument("--stdin", "-s", action="store_true",
-                     help="read email content from stdin")
+                     help="read email from stdin")
     src.add_argument("--batch", "-b", type=Path, metavar="DIR",
                      help="analyse every .txt file in a directory")
 
+    parser.add_argument("--provider", "-p",
+                        choices=["openai", "ollama", "anthropic"],
+                        default="ollama",
+                        help="AI provider (default: ollama)")
+    parser.add_argument("--model", "-m", metavar="MODEL",
+                        help="model name (default depends on provider)")
     parser.add_argument("--output",   "-o", type=Path, metavar="JSON",
-                        help="write a JSON report to this file")
+                        help="write JSON report to file")
     parser.add_argument("--no-color", action="store_true",
                         help="disable ANSI colour output")
     return parser
@@ -279,19 +361,17 @@ def main() -> int:
     if args.no_color or not sys.stdout.isatty():
         disable_colors()
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print(f"{C.RED}Error: ANTHROPIC_API_KEY is not set.\n"
-              f"Copy .env.example → .env and add your key.{C.RESET}", file=sys.stderr)
-        return 1
+    provider = args.provider
+    model    = args.model or DEFAULT_MODELS[provider]
 
-    client  = anthropic.Anthropic(api_key=api_key)
+    print(f"{C.DIM}Provider: {provider} | Model: {model}{C.RESET}", file=sys.stderr)
+
     results: list[PhishingAnalysis] = []
 
     try:
         if args.stdin:
             text     = read_stdin()
-            analysis = analyze_email(client, text, "stdin")
+            analysis = analyze_email(provider, model, text, "stdin")
             print_analysis(analysis, "stdin")
             results.append(analysis)
 
@@ -300,7 +380,7 @@ def main() -> int:
                 print(f"{C.RED}Error: file not found — {args.file}{C.RESET}", file=sys.stderr)
                 return 1
             text     = read_file(args.file)
-            analysis = analyze_email(client, text, str(args.file))
+            analysis = analyze_email(provider, model, text, str(args.file))
             print_analysis(analysis, args.file.name)
             results.append(analysis)
 
@@ -313,36 +393,29 @@ def main() -> int:
                 print(f"{C.YELLOW}No .txt files found in {args.batch}{C.RESET}", file=sys.stderr)
                 return 0
 
-            print(f"\n{C.BOLD}{C.CYAN}Starting batch scan — {len(files)} email(s)…{C.RESET}")
+            print(f"\n{C.BOLD}{C.CYAN}Starting batch scan — {len(files)} email(s)...{C.RESET}")
             for idx, f in enumerate(files, 1):
                 print(f"{C.DIM}  [{idx}/{len(files)}] {f.name}{C.RESET}")
                 text     = read_file(f)
-                analysis = analyze_email(client, text, str(f))
+                analysis = analyze_email(provider, model, text, str(f))
                 print_analysis(analysis, f.name)
                 results.append(analysis)
 
             print_batch_summary(results)
 
-    except anthropic.AuthenticationError:
-        print(f"{C.RED}Error: invalid API key.{C.RESET}", file=sys.stderr)
-        return 1
-    except anthropic.RateLimitError:
-        print(f"{C.RED}Error: rate limit exceeded — wait and retry.{C.RESET}", file=sys.stderr)
-        return 1
-    except anthropic.APIError as exc:
-        print(f"{C.RED}API error: {exc}{C.RESET}", file=sys.stderr)
-        return 1
     except json.JSONDecodeError as exc:
-        print(f"{C.RED}Could not parse Claude response as JSON: {exc}{C.RESET}", file=sys.stderr)
+        print(f"{C.RED}Could not parse model response as JSON: {exc}{C.RESET}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print(f"\n{C.YELLOW}Aborted.{C.RESET}", file=sys.stderr)
         return 130
+    except Exception as exc:
+        print(f"{C.RED}Error: {exc}{C.RESET}", file=sys.stderr)
+        return 1
 
     if args.output and results:
         save_report(results, args.output)
 
-    # Non-zero exit when phishing detected — useful for CI pipelines.
     return 2 if any(r.verdict == "PHISHING" for r in results) else 0
 
 
