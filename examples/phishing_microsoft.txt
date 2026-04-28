@@ -1,0 +1,37 @@
+From: no-reply@microsoft-security-center.net
+To: user@company.com
+Subject: [ACTION REQUIRED] Microsoft 365 — Critical Security Alert: Account Breach Detected
+Date: Mon, 28 Apr 2026 11:47:09 +0000
+Reply-To: support@micro5oft-helpdesk.ru
+
+Hello Microsoft 365 User,
+
+Our security system has detected that your Microsoft account credentials were exposed in a recent data breach affecting 2.4 million business accounts.
+
+IMMEDIATE ACTION REQUIRED:
+
+Your account (user@company.com) was accessed by an unauthorized third-party from the following locations in the last 48 hours:
+  - Kyiv, Ukraine  (IP: 91.234.55.18)
+  - Beijing, China (IP: 103.45.78.211)
+
+To prevent further unauthorized access and protect your organization's data, you must update your credentials using our secure portal RIGHT NOW:
+
+CLICK HERE TO SECURE YOUR ACCOUNT:
+>> https://bit.ly/3xMic0s0ftSecurity <<
+
+If you fail to update your credentials in the next 2 HOURS:
+  ✗ Your account will be locked
+  ✗ All connected services (Teams, OneDrive, SharePoint) will be suspended
+  ✗ Your IT administrator will be notified of the breach
+  ✗ Your company's data may be at risk
+
+Once you click the link, enter your current username and password to confirm your identity, then follow the steps to secure your account.
+
+If you belive this email is send to you in error, plese contact our support team at: support@micro5oft-helpdesk.ru
+
+Best regards,
+Microsoft Security Response Center
+Microsoft Corporation
+One Microsoft Way, Redmond, WA 98052
+
+CONFIDENTIALITY NOTICE: This communication is intended only for the named recipient.

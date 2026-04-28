@@ -1,0 +1,34 @@
+From: security@paypa1-alerts.com
+To: customer@example.com
+Subject: URGENT: Your PayPal account has been limited - Action Required Within 24 Hours
+Date: Mon, 28 Apr 2026 08:14:32 +0000
+
+Dear Valued Customer,
+
+We have noticed unusual activity on your PayPal account and have temporarily limited your access as a precautionary measure. You MUST verify your information within 24 hours or your account will be permanently suspended.
+
+Your account shows the following security issues:
+- Unrecognized login from IP: 185.220.101.47 (Russia)
+- Multiple failed password attempts
+- Suspicious transaction of $847.00 pending
+
+To restore full access to your account, please click the link below immediately:
+
+http://paypal-secure-verification.xyz/restore?token=4f8a9c2e1b7d6f3a0e5c8b2d9f4a7e1c
+
+You will need to provide:
+1. Full name and date of birth
+2. Credit/debit card number and CVV
+3. Social Security Number for identity verification
+4. Your current PayPal password
+
+If you do not complete verification within 24 HOURS, your account balance of $1,247.83 will be frozen and transferred to our fraud protection fund pending investigation.
+
+This email was sent to you because your account security is our #1 priority.
+
+PayPal Security Team
+PayPal, Inc.
+
+Note: Do not reply to this email. For questions call 1-888-555-0192.
+
+© 2026 PayPaI Inc. All rights reserved.

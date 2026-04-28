@@ -1,0 +1,46 @@
+From: auto-confirm@amazon.com
+To: john.doe@gmail.com
+Subject: Your Amazon.com order of "Sony WH-1000XM5 Wireless Noise Canceling Headphones" has shipped
+Date: Mon, 28 Apr 2026 14:23:17 +0000
+
+Hello John,
+
+Good news — your order has shipped!
+
+Your package is on its way and will be delivered:
+
+  Tuesday, April 29, 2026
+
+Order #112-4857293-6628341
+
+Items shipped:
+  Sony WH-1000XM5 Wireless Noise Canceling Headphones, Black
+  Sold by: Amazon.com
+  Qty: 1
+
+Shipping address:
+  John Doe
+  123 Main Street
+  Springfield, IL 62701
+  United States
+
+Carrier: UPS
+Tracking number: 1Z999AA10123456784
+
+Track your package:
+https://www.amazon.com/progress-tracker/package/ref=pe_2640190_234124110?_encoding=UTF8&from=gp&itemId=&orderId=112-4857293-6628341&shipmentId=SkO4iAnPaHsXCCKlQyMFiQ&packageIndex=0
+
+Estimated delivery: Tuesday, April 29, 2026 by 8 PM
+
+To view the status of your order, return, or start a chat:
+https://www.amazon.com/gp/css/order-details?ie=UTF8&orderID=112-4857293-6628341
+
+Thank you for shopping with us.
+
+Amazon.com
+
+---
+This email was sent from a notification-only address that cannot accept incoming email. Please do not reply to this message. If you have questions about your order, please visit our Help pages at https://www.amazon.com/gp/help/customer/display.html
+
+© 2026 Amazon.com, Inc. or its affiliates. All rights reserved.
+Amazon.com, 410 Terry Ave. N., Seattle, WA 98109-5210
